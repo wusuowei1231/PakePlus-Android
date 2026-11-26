@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+		<title>产品参数问答考核系统</title>
+		<link rel="stylesheet" href="css/Prodect.css">
+		<style>
+			/* 首帧防闪现：外部CSS未到达前先兜底；仅手机端生效，PC不受影响 */
+			.m-tabbar {
+				display: none;
+			}
+
+			@media screen and (max-width:768px) {
+
+				/* 整页首帧隐藏，JS初始化渲染完成后由Product.js加 app-ready 一次性显示 */
+				body {
+					visibility: hidden;
+				}
+
+				.panel {
+					display: none;
+				}
+
+				.panel.active {
+					display: block;
+				}
+
+				.modal-mask,
+				.note-mask,
+				.syn-mask,
+				.drawer-mask {
+					display: none;
+				}
+
+				.tab-wrap {
+					display: none !important;
+				}
+
+				.prod-left {
+					position: fixed;
+					left: 0;
+					top: 0;
+					bottom: 0;
+					width: 280px;
+					max-width: 85vw;
+					z-index: 85;
+					transform: translateX(-105%);
+					visibility: hidden;
+				}
+
+				.prod-left.drawer-open {
+					transform: translateX(0);
+					visibility: visible;
+				}
+
+				#quizPanel:not(.ready) {
+					display: none;
+				}
+
+				.m-tabbar {
+					display: flex;
+					position: fixed;
+					left: 0;
+					right: 0;
+					bottom: 0;
+					z-index: 90;
+					background: #fff;
+				}
+			}
+
+			body.app-ready {
+				visibility: visible;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="tab-wrap">
+			<div class="tab-item tab-detail active" onclick="switchTab('detail')">📋 产品详情</div>
+			<div class="tab-item tab-prod" onclick="switchTab('prod')">📦 产品库管理（考核数据源）</div>
+			<div class="tab-item tab-quiz" onclick="switchTab('quiz')">📝 答题考核</div>
+		</div>
+
+		<div class="panel active" id="panel-detail">
+			<div class="sub-select-bar">
+				<select id="subTabSelect" onchange="onSubSelectChange()"></select>
+				<button id="lockGroupBtn" class="btn-gray" onclick="toggleLockSubTab()">🔓 未锁定</button>
+				<button class="btn-gray" onclick="addNewSubTab()">➕新增分组</button>
+				<button class="btn-warning" onclick="renameCurrentSubTab()">✏️重命名</button>
+				<button class="btn-danger" onclick="deleteCurrentSubTab()">🗑️删除分组</button>
+			</div>
+			<input type="hidden" id="activeSubTabId">
+			<div class="prod-wrap">
+				<div class="prod-left">
+					<h3>产品详情（多分组，不参与答题考核）</h3>
+					<div class="tip">✅每个分组独立表格，表头由导入Excel决定<br>✅备注过长点击单元格展开弹窗查看编辑<br>✅每行可点【导入库】送入产品库；批量导入仅导入当前分组</div>
+					<input type="file" id="detailFileInput" accept="*/*">
+					<button class="btn-primary" onclick="readDetailExcel()">📤 Excel导入到当前分组</button>
+					<button class="btn-gray" onclick="downloadDetailGroupTemplate()">📥导出当前分组模板</button>
+					<button class="btn-gray" onclick="exportCurrentSubTabJson()">💾导出当前分组JSON</button>
+					<button class="btn-primary" onclick="addDetailEmptyRow()">➕ 新增一行产品</button>
+					<button class="btn-warning" onclick="renderDetailTable()">🔄 刷新表格</button>
+					<button class="btn-import" onclick="batchImportDetailToLib()">📥 当前分组批量导入产品库</button>
+					<div class="tip">导入以【型号】为主键，可选择覆盖/跳过重复型号</div>
+				</div>
+				<div class="prod-right">
+					<div class="search-row">
+						<button class="menu-btn" onclick="openDrawer(this)" title="工具栏">☰</button>
+						<input type="text" id="detailSearchInput" placeholder="🔍 搜索当前分组任意字段"
+							oninput="onDetailSearch()">
+						<button class="btn-gray" onclick="clearDetailSearch()"
+							style="width:auto;padding:4px 8px">清空</button>
+						<button class="btn-gray" onclick="renderDetailTable()" style="width:auto;padding:4px 8px">🔄
+							刷新</button>
+					</div>
+					<div class="table-wrap">
+						<div id="detailTableBox"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="panel" id="panel-prod">
+			<div class="prod-wrap">
+				<div class="prod-left">
+					<h3>批量导入导出（答题考核仅读取本库）</h3>
+					<div class="tip">✅ 表头完全自定义，Excel想加什么列就加什么列<br>✅ 导入时手动选择【型号主键】<br>✅ 支持增量追加 / 勾选后同型号覆盖更新<br>✅
+						新增备注字段，导入导出同步携带</div>
+					<input type="file" id="fileInput" accept="*/*">
+					<button class="btn-primary" onclick="readCustomExcel()">📤 上传Excel导入</button>
+					<button class="btn-gray" onclick="downloadTemplate()">📥 下载模板（跟随当前库表头）</button>
+					<button class="btn-warning" onclick="exportAll()">💾 导出全部产品备份</button>
+					<button class="btn-danger" onclick="clearAllLib()">🗑️ 清空产品库</button>
+					<button class="btn-success" onclick="backupAllData()">💾 全量备份JSON</button>
+					<button class="btn-gray" onclick="pickRestoreFile()">📂 恢复JSON备份</button>
+					<div class="tip">模板说明：库内无数据时默认只有【型号、备注】；导入数据后下载模板自动同步表头</div>
+				</div>
+				<div class="prod-right">
+					<div class="search-row">
+						<button class="menu-btn" onclick="openDrawer(this)" title="工具栏">☰</button>
+						<input type="text" id="libSearchInput" placeholder="🔍 搜索任意字段(型号/参数/备注)"
+							oninput="onLibSearch()">
+						<button class="btn-gray" onclick="clearLibSearch()"
+							style="width:auto;padding:4px 8px">清空</button>
+						<button class="btn-gray" onclick="renderLibTable()" style="width:auto;padding:4px 8px">🔄
+							刷新</button>
+					</div>
+					<div class="table-wrap">
+						<div id="libTableBox"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="panel" id="panel-quiz">
+			<div class="quiz-main-wrap">
+				<div class="quiz-setting-panel">
+					<h3>出题设置</h3>
+					<label>题目数量</label>
+					<input type="number" id="qty" min="1" value="10">
+					<label>指定型号（留空=全部，多个用逗号或换行分隔）</label>
+					<textarea id="modelFilter" rows="2" style="width:100%" placeholder="如：C27V5N,A24E3"></textarea>
+					<div class="radio-row">
+						<input type="radio" name="quizMode" id="modeA" value="param" checked>
+						<label for="modeA">给型号，回答参数</label>
+					</div>
+					<div class="radio-row">
+						<input type="radio" name="quizMode" id="modeB" value="model">
+						<label for="modeB">给参数组合，回答型号（背型号）</label>
+					</div>
+					<div><b>匹配模式</b></div>
+					<div class="radio-row">
+						<input type="radio" name="matchMode" id="matchExact" value="exact">
+						<label for="matchExact">严格完全一致</label>
+					</div>
+					<div class="radio-row">
+						<input type="radio" name="matchMode" id="matchSyn" value="syn" checked>
+						<label for="matchSyn">别名宽松匹配（方案A）</label>
+					</div>
+					<div class="radio-row">
+						<input type="radio" name="matchMode" id="matchBorder" value="border">
+						<label for="matchBorder">边界宽松匹配（方案B）</label>
+					</div>
+					<button class="btn-gray" onclick="openSynModal()">📖 别名同义组管理</button>
+					<div class="check-row">
+						<input type="checkbox" id="useCountdown">
+						<label for="useCountdown">开启倒计时</label>
+					</div>
+					<div class="timer-box" id="timerBox">⏱️ 剩余时间：<span id="timerText">00:00</span></div>
+					<label>答题时长（分钟）</label>
+					<input type="number" id="timeLimit" min="1" value="20">
+					<button class="btn-success" onclick="startQuiz()">✅ 随机抽题开始</button>
+					<button class="btn-warning" onclick="startWrongQuiz()">🔁 只刷错题</button>
+					<button class="btn-gray" onclick="exportWrong()">📥 导出错题表</button>
+					<button class="btn-gray" onclick="resetQuiz()">🔄 重置本次答题</button>
+					<div class="tip">模式B：随机取2~3个有效参数组合出题；不开启倒计时不限作答时间；仅读取产品库数据</div>
+				</div>
+				<div class="nav-panel">
+					<h4>题号</h4>
+					<div class="q-index-list" id="qIndexBox"></div>
+					<div class="tip">点击题号跳转</div>
+					<button class="btn-primary" style="margin-top:10px;width:auto" onclick="markQuestion()">⚠️
+						标记/取消存疑</button>
+					<button class="btn-primary" style="margin-top:6px;width:auto" onclick="submitAll()">✅ 提交阅卷</button>
+				</div>
+				<div class="quiz-panel" id="quizPanel">
+					<h3>答题区</h3>
+					<div id="quizBox">
+						<div class="tip">先导入【产品库管理】再来答题</div>
+					</div>
+					<button class="m-submit-btn" onclick="submitAll()">✅ 提交答卷</button>
+					<div id="inlineResult" class="hide">
+						<div class="stat-row">
+							<div class="stat-item">总题：<strong id="rTotal2">0</strong></div>
+							<div class="stat-item">答对：<strong id="rOk2">0</strong></div>
+							<div class="stat-item">答错：<strong id="rNo2">0</strong></div>
+							<div class="stat-item">未答：<strong id="rUn2">0</strong></div>
+							<div class="stat-item">正确率：<strong id="rRate2">0%</strong></div>
+						</div>
+						<button class="btn-gray" onclick="exportResult()">📥 导出本次成绩</button>
+						<h4>答题明细</h4>
+						<div id="resultDetail2"></div>
+						<button class="btn-primary" style="width:auto;margin-top:10px"
+							onclick="backQuiz()">返回答题</button>
+						<button class="btn-success" style="width:auto;margin-top:10px"
+							onclick="resetQuiz()">重新开始</button>
+					</div>
+				</div>
+			</div>
+			<div class="result-panel hide" id="resultBox">
+				<h3>考核结果</h3>
+				<div class="stat-row">
+					<div class="stat-item">总题：<strong id="rTotal">0</strong></div>
+					<div class="stat-item">答对：<strong id="rOk">0</strong></div>
+					<div class="stat-item">答错：<strong id="rNo">0</strong></div>
+					<div class="stat-item">未答：<strong id="rUn">0</strong></div>
+					<div class="stat-item">正确率：<strong id="rRate">0%</strong></div>
+				</div>
+				<button class="btn-gray" onclick="exportResult()">📥 导出本次成绩</button>
+				<h4>答题明细</h4>
+				<div id="resultDetail"></div>
+				<button class="btn-primary" style="width:auto;margin-top:10px" onclick="backQuiz()">返回答题</button>
+				<button class="btn-success" style="width:auto;margin-top:10px" onclick="resetQuiz()">重新开始</button>
+			</div>
+		</div>
+
+		<div class="modal-mask" id="importModal">
+			<div class="modal">
+				<h4>产品库导入配置</h4>
+				<div>选择作为【产品型号】的列：</div>
+				<select id="keyCol"></select>
+				<div class="check-row">
+					<input type="checkbox" id="doDedupe">
+					<label for="doDedupe">按型号去重，新数据覆盖已有同型号</label>
+				</div>
+				<div>预览前8条：</div>
+				<div class="modal-preview" id="previewBox"></div>
+				<div class="modal-buttons">
+					<button class="btn-gray" onclick="closeModal()">取消</button>
+					<button class="btn-primary" onclick="confirmImport()">确认导入</button>
+				</div>
+			</div>
+		</div>
+
+		<div class="modal-mask" id="detailImportModal">
+			<div class="modal">
+				<h4>产品详情导入配置（导入当前分组）</h4>
+				<div>选择作为【产品型号】的列：</div>
+				<select id="detailKeyCol"></select>
+				<div class="check-row">
+					<input type="checkbox" id="detailDoAppend">
+					<label for="detailDoAppend">追加模式（不覆盖当前分组原有数据）</label>
+				</div>
+				<div>预览前8条：</div>
+				<div class="modal-preview" id="detailPreviewBox"></div>
+				<div class="modal-buttons">
+					<button class="btn-gray" onclick="closeDetailImportModal()">取消</button>
+					<button class="btn-primary" onclick="confirmDetailImport()">确认导入到当前分组</button>
+				</div>
+			</div>
+		</div>
+
+		<div class="modal-mask" id="importConfirmModal">
+			<div class="modal">
+				<h4>导入到产品库</h4>
+				<div class="check-row">
+					<input type="radio" name="importMode" id="impSkip" value="skip" checked>
+					<label for="impSkip">型号重复 → 跳过</label>
+				</div>
+				<div class="check-row">
+					<input type="radio" name="importMode" id="impOver" value="over">
+					<label for="impOver">型号重复 → 覆盖旧数据</label>
+				</div>
+				<div class="modal-buttons">
+					<button class="btn-gray" onclick="closeImportConfirmModal()">取消</button>
+					<button class="btn-primary" onclick="doImportFromDetail()">确认导入</button>
+				</div>
+			</div>
+		</div>
+
+		<div class="note-mask" id="noteMask">
+			<div class="note-modal" onclick="event.stopPropagation()">
+				<h4>备注详情</h4>
+				<textarea id="noteTextarea"></textarea>
+				<div class="note-buttons">
+					<button class="btn-primary" onclick="saveNote()">保存</button>
+					<button class="btn-gray" onclick="copyCurrentNote()">📋复制备注</button>
+					<button class="btn-gray" onclick="closeNoteMask()">关闭</button>
+				</div>
+			</div>
+		</div>
+
+		<div class="note-mask" id="detailViewMask">
+			<div class="note-modal detail-view-modal" onclick="event.stopPropagation()">
+				<h4>本条数据详情</h4>
+				<div class="detail-view-box" id="detailViewBox"></div>
+				<div class="view-imgs-box" id="viewImgsBox"></div>
+				<input type="file" id="viewImgInput" accept="image/*" multiple hidden onchange="onViewImgChange(event)">
+				<div class="note-buttons">
+					<button class="btn-gray" onclick="copyCurrentViewRow()">📋复制本条</button>
+					<button class="btn-gray" onclick="closeDetailView()">关闭</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- 图片大图预览（可替换/删除） -->
+		<div class="img-preview-mask" id="imgPreviewMask" onclick="closeImgPreview()">
+			<div class="img-preview-body" onclick="event.stopPropagation()">
+				<img id="imgPreviewImg" alt="图片预览">
+				<div class="img-preview-actions">
+					<button class="btn-primary" id="replaceImgBtn" onclick="replacePreviewImg()">🔄 替换这张</button>
+					<button class="btn-danger" id="delPreviewImgBtn" onclick="removePreviewImg()">🗑 删除这张</button>
+					<button class="btn-gray" onclick="closeImgPreview()">关闭</button>
+				</div>
+			</div>
+		</div>
+
+		<div class="syn-mask" id="synMask">
+			<div class="syn-modal" onclick="event.stopPropagation()">
+				<h4>同义别名组管理（一行一组，逗号分隔别名）</h4>
+				<div id="synListBox"></div>
+				<div class="syn-buttons">
+					<button class="btn-primary" onclick="addSynLine()">➕ 新增组别</button>
+					<button class="btn-success" onclick="saveSynGroups()">✅ 保存</button>
+					<button class="btn-gray" onclick="closeSynModal()">关闭</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- 抽屉工具栏遮罩（PC端） -->
+		<div class="drawer-mask" onclick="closeDrawer()"></div>
+
+		<!-- 移动端底部导航栏（仅手机端显示，PC隐藏） -->
+		<nav class="m-tabbar">
+			<div class="m-tab active" data-tab="detail" onclick="switchTab('detail')">
+				<span class="m-tab-icon">📋</span><span>详情</span>
+			</div>
+			<div class="m-tab" data-tab="prod" onclick="switchTab('prod')">
+				<span class="m-tab-icon">📦</span><span>产品库</span>
+			</div>
+			<div class="m-tab" data-tab="quiz" onclick="switchTab('quiz')">
+				<span class="m-tab-icon">📝</span><span>考核</span>
+			</div>
+		</nav>
+
+		<!-- 加载顺序：第三方库优先，再业务js -->
+		<script src="js/xlsx.full.min.js"></script>
+		<script src="js/Sortable.min.js"></script>
+		<script src="js/Product.js"></script>
+		<script>
+			/* 兜底：主脚本异常时1.5秒后强制显示，避免手机端白屏 */
+			setTimeout(function() {
+				document.body.classList.add('app-ready');
+			}, 1500);
+		</script>
+	</body>
+</html>
